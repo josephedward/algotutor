@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Study System Data
+# Contains student progress and session data - should not be committed
+study_data/
