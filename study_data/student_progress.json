@@ -1,0 +1,46 @@
+{
+  "student_001": {
+    "student_id": "student_001",
+    "topics_mastered": [
+      "arrays"
+    ],
+    "current_level": "beginner",
+    "total_study_time": 0,
+    "total_problems_solved": 4,
+    "sessions": [
+      {
+        "session_id": "student_001_20250909_200938",
+        "start_time": "2025-09-09T20:09:38.924529",
+        "end_time": "2025-09-09T20:09:38.924558",
+        "topics_covered": [
+          "arrays"
+        ],
+        "problems_attempted": 5,
+        "problems_completed": 4,
+        "performance_score": 0.8
+      }
+    ],
+    "last_active": "2025-09-09T20:09:38.924564"
+  },
+  "bob": {
+    "student_id": "bob",
+    "topics_mastered": [],
+    "current_level": "beginner",
+    "total_study_time": 0,
+    "total_problems_solved": 2,
+    "sessions": [
+      {
+        "session_id": "bob_20250909_201146",
+        "start_time": "2025-09-09T20:11:46.900372",
+        "end_time": "2025-09-09T20:11:46.900408",
+        "topics_covered": [
+          "arrays"
+        ],
+        "problems_attempted": 3,
+        "problems_completed": 2,
+        "performance_score": 0.6666666666666666
+      }
+    ],
+    "last_active": "2025-09-09T20:11:46.900414"
+  }
+}
