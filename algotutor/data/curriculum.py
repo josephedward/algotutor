@@ -95,3 +95,4 @@ algorithm_patterns = {
         "examples": ["N-Queens", "Sudoku Solver", "Word Search"]
     }
 }
+

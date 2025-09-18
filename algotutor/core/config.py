@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     temperature: float = 0.7
     
     # Database Configuration
-    database_url: str = "sqlite:///cb_tutor.db"
+    database_url: str = "sqlite:///algotutor.db"
     
     # Application Configuration
     debug: bool = False

@@ -1,8 +1,8 @@
 """Curriculum management service."""
 
 from typing import Dict, List, Any, Optional
-from cb.services.database import db_service
-from cb.models import Curriculum, Problem
+from algotutor.services.database import db_service
+from algotutor.models import Curriculum, Problem
 
 
 class CurriculumService:

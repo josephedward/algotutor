@@ -17,8 +17,8 @@ An AI-powered algorithm tutor that provides personalized learning with accountab
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/josephedward/cb.git
-cd cb
+git clone <your fork or this repo>
+cd algotutor
 ```
 
 2. **Install dependencies**:
@@ -34,14 +34,14 @@ cp .env.example .env
 
 4. **Initialize the database**:
 ```bash
-cb --init
+algotutor --init
 ```
 
 ## Usage 📖
 
 ### Start a Learning Session
 ```bash
-cb --user your_username
+algotutor --user your_username
 ```
 
 ### Available Commands
@@ -61,7 +61,7 @@ When solving problems, you can:
 ## Architecture 🏗️
 
 ```
-cb/
+algotutor/
 ├── core/           # Core configuration and utilities
 ├── models/         # Database models and schemas
 ├── services/       # Business logic services
@@ -133,7 +133,7 @@ LOG_LEVEL=INFO
 
 ### Sample Learning Flow
 
-1. **Start Session**: `cb --user alice`
+1. **Start Session**: `algotutor --user alice`
 2. **Choose Problem**: System suggests "Two Sum" for beginners
 3. **Code Solution**: Interactive editor with syntax highlighting
 4. **Get Feedback**: AI asks "What data structure could help you find complements efficiently?"

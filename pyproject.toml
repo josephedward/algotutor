@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cb-algorithm-tutor"
+name = "algotutor"
 version = "0.1.0"
 description = "LLM-powered algorithm tutor with accountability and persistence"
 readme = "README.md"
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.scripts]
-cb = "cb.main:main"
+algotutor = "algotutor.main:main"
 
 [tool.black]
 line-length = 88

@@ -3,8 +3,8 @@
 from typing import Optional, List
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from cb.core.config import settings
-from cb.models import Base, User, Curriculum, Session as LearningSession, Problem, Attempt
+from algotutor.core.config import settings
+from algotutor.models import Base, User, Curriculum, Session as LearningSession, Problem, Attempt
 
 
 class DatabaseService:

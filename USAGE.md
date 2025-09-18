@@ -89,7 +89,7 @@ To enable full AI-powered features:
 
 1. Add OpenAI API key to `.env` file
 2. Install additional dependencies: `pip install openai python-dotenv`
-3. The full `cb/` module structure supports advanced LLM features:
+3. The full `algotutor/` module structure supports advanced LLM features:
    - Dynamic problem generation
    - Sophisticated line-by-line analysis
    - Adaptive curriculum progression

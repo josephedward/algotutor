@@ -2,19 +2,33 @@
 
 import json
 from typing import Dict, List, Optional, Any
-from openai import OpenAI
-from cb.core.config import settings
+from algotutor.core.config import settings
+
+# Make OpenAI optional so the app can start without the package
+try:
+    from openai import OpenAI  # type: ignore
+except Exception:  # ImportError or other environment issues
+    OpenAI = None  # type: ignore
 
 
 class LLMService:
     """Service for LLM interactions using OpenAI."""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        # Lazily initialize client; tolerate missing SDK in non-LLM paths
+        self.client = None
         self.model = settings.model_name
+        if OpenAI is not None and settings.openai_api_key:
+            try:
+                self.client = OpenAI(api_key=settings.openai_api_key)
+            except Exception:
+                # If initialization fails (e.g., bad key), keep client as None
+                self.client = None
         
     def generate_socratic_question(self, code: str, problem: str, context: str) -> str:
         """Generate a Socratic question to guide learning."""
+        if self.client is None:
+            return "What invariant or data structure could simplify your approach?"
         system_prompt = """You are a Socratic algorithm tutor. Your role is to guide students 
         through understanding algorithms by asking probing questions rather than giving direct answers.
         
@@ -52,6 +66,8 @@ class LLMService:
     
     def analyze_code_patterns(self, code: str) -> List[str]:
         """Analyze code to identify algorithm patterns."""
+        if self.client is None:
+            return []
         system_prompt = """You are an expert algorithm pattern analyzer. 
         Identify the algorithmic patterns, data structures, and techniques used in the given code.
         
@@ -95,6 +111,15 @@ class LLMService:
     
     def provide_line_by_line_feedback(self, code: str, problem: str) -> Dict[str, Any]:
         """Provide detailed line-by-line feedback on code."""
+        if self.client is None:
+            return {
+                "overall_feedback": "LLM not configured; basic checks only.",
+                "line_feedback": {},
+                "suggestions": [],
+                "patterns_used": [],
+                "time_complexity": "Unknown",
+                "space_complexity": "Unknown",
+            }
         system_prompt = """You are an expert algorithm tutor providing line-by-line code feedback.
         Analyze the code and provide constructive feedback focusing on:
         
@@ -154,6 +179,8 @@ class LLMService:
     
     def generate_hint(self, problem: str, current_code: str, hint_level: int = 1) -> str:
         """Generate progressive hints based on problem and current code."""
+        if self.client is None:
+            return "Consider the core pattern likely involved (e.g., hash map, two pointers)."
         hint_prompts = {
             1: "Provide a subtle hint about the approach without giving away the solution.",
             2: "Give a more direct hint about the algorithm or data structure to use.",

@@ -11,11 +11,11 @@ from rich.markdown import Markdown
 from typing import Optional, Dict, Any
 import time
 
-from cb.services.database import db_service
-from cb.services.llm import llm_service
-from cb.services.execution import code_execution_service
-from cb.services.curriculum import curriculum_service
-from cb.models import User, Problem, Attempt
+from algotutor.services.database import db_service
+from algotutor.services.llm import llm_service
+from algotutor.services.execution import code_execution_service
+from algotutor.services.curriculum import curriculum_service
+from algotutor.models import User, Problem, Attempt
 
 console = Console()
 
