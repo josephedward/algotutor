@@ -115,42 +115,69 @@ class TutorSession:
             console.print(syntax)
     
     def code_editor(self):
-        """Simple code editor interface."""
+        """Open system editor for code entry, with fallback."""
+        if not self.current_problem:
+            return
+
         console.print("\n[bold]Code Editor[/bold]")
-        console.print("[dim]Type your solution (press Enter twice when done):[/dim]")
-        
-        code_lines = []
-        empty_lines = 0
-        
-        while empty_lines < 2:
-            line = input(">>> " if not code_lines else "... ")
-            if line.strip() == "":
-                empty_lines += 1
-            else:
-                empty_lines = 0
-            code_lines.append(line)
-        
-        # Remove trailing empty lines
-        while code_lines and code_lines[-1].strip() == "":
-            code_lines.pop()
-            
-        code = "\n".join(code_lines)
-        
-        if code.strip():
-            # Create attempt record
+        console.print("[dim]Opening your $EDITOR (falls back to vi). Save & quit to return.[/dim]")
+
+        # Determine initial content
+        initial = None
+        if self.current_attempt and self.current_attempt.code:
+            initial = self.current_attempt.code
+        elif self.current_problem.solution_template:
+            initial = self.current_problem.solution_template
+        else:
+            initial = "# Write your solution here\n"
+
+        edited = None
+        try:
+            edited = click.edit(initial, extension=".py")
+        except Exception as e:
+            console.print(f"[red]Failed to open external editor: {e}[/red]")
+
+        # If editor was aborted or failed, fall back to simple inline input
+        if edited is None:
+            console.print("[yellow]Editor aborted. Falling back to inline entry. Press Enter twice to finish.[/yellow]")
+            code_lines = []
+            empty_lines = 0
+            while empty_lines < 2:
+                try:
+                    line = input(">>> " if not code_lines else "... ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if line.strip() == "":
+                    empty_lines += 1
+                else:
+                    empty_lines = 0
+                code_lines.append(line)
+            while code_lines and code_lines[-1].strip() == "":
+                code_lines.pop()
+            edited = "\n".join(code_lines)
+
+        code = (edited or "").rstrip()
+        if not code.strip():
+            console.print("[red]No code captured.[/red]")
+            return
+
+        # Create or update attempt
+        if self.current_attempt is None:
             self.current_attempt = db_service.create_attempt(
                 user_id=self.user.id,
                 problem_id=self.current_problem.id,
-                code=code
+                code=code,
             )
-            
-            # Show code with syntax highlighting
-            console.print("\n[bold]Your Code:[/bold]")
-            syntax = Syntax(code, "python", theme="monokai", line_numbers=True)
-            console.print(syntax)
-            
-            # Get Socratic question from LLM
-            self.provide_socratic_feedback(code)
+        else:
+            db_service.update_attempt(self.current_attempt.id, code=code)
+
+        # Show code with syntax highlighting
+        console.print("\n[bold]Your Code:[/bold]")
+        syntax = Syntax(code, "python", theme="monokai", line_numbers=True)
+        console.print(syntax)
+
+        # Get Socratic question from LLM
+        self.provide_socratic_feedback(code)
     
     def provide_socratic_feedback(self, code: str):
         """Provide Socratic questioning feedback."""
