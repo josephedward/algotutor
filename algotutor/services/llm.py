@@ -164,17 +164,33 @@ class LLMService:
                 max_tokens=settings.max_tokens,
                 temperature=0.3
             )
-            
             feedback_json = response.choices[0].message.content.strip()
             return json.loads(feedback_json)
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, Exception) as e:
+            # Retry once with a safe default model if configured model fails
+            try:
+                fallback_model = "gpt-4o-mini"
+                if self.model != fallback_model:
+                    response = self.client.chat.completions.create(
+                        model=fallback_model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        max_tokens=settings.max_tokens,
+                        temperature=0.3
+                    )
+                    feedback_json = response.choices[0].message.content.strip()
+                    return json.loads(feedback_json)
+            except Exception:
+                pass
             return {
-                "overall_feedback": "Unable to analyze code at this time",
+                "overall_feedback": f"Unable to analyze code at this time (LLM error).",
                 "line_feedback": {},
                 "suggestions": [],
                 "patterns_used": [],
                 "time_complexity": "Unknown",
-                "space_complexity": "Unknown"
+                "space_complexity": "Unknown",
             }
     
     def generate_hint(self, problem: str, current_code: str, hint_level: int = 1) -> str:

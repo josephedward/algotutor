@@ -98,6 +98,12 @@ class DatabaseService:
         """Get problems by category."""
         with self.get_session() as session:
             return session.query(Problem).filter(Problem.category == category).all()
+
+    def list_problem_categories(self) -> List[str]:
+        """List distinct categories that have problems."""
+        with self.get_session() as session:
+            rows = session.query(Problem.category).distinct().all()
+            return [r[0] for r in rows if r and r[0]]
     
     # Attempt operations
     def create_attempt(self, user_id: int, problem_id: int, code: str,

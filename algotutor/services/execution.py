@@ -1,6 +1,7 @@
 """Code execution service for CB Algorithm Tutor."""
 
 import ast
+import re
 import sys
 import subprocess
 import tempfile
@@ -18,6 +19,8 @@ class CodeExecutionService:
         
     def execute_python_code(self, code: str, test_cases: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Execute Python code with test cases and return results."""
+        # Normalize indentation to avoid tab/space mix issues
+        code = self.sanitize_code(code)
         results = {
             "success": False,
             "output": "",
@@ -32,7 +35,10 @@ class CodeExecutionService:
             ast.parse(code)
             results["syntax_valid"] = True
         except SyntaxError as e:
-            results["errors"] = f"Syntax Error: {str(e)}"
+            msg = str(e)
+            if "inconsistent use of tabs and spaces" in msg:
+                msg += "\nHint: Your code mixes tabs and spaces. We try to auto-fix by converting tabs to 4 spaces; ensure your editor uses spaces for indentation."
+            results["errors"] = f"Syntax Error: {msg}"
             return results
         
         # Execute code with test cases
@@ -105,76 +111,79 @@ class CodeExecutionService:
             results["errors"] = str(e)
         
         return results
+
+    def sanitize_code(self, code: str) -> str:
+        """Best-effort sanitation of user code prior to parsing/execution.
+
+        - Convert leading tabs to 4 spaces to avoid mixed-indentation SyntaxError
+        - Normalize newlines
+        """
+        lines = code.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        fixed: list[str] = []
+        for line in lines:
+            m = re.match(r"^([ \t]*)", line)
+            if m:
+                prefix = m.group(1)
+                if "\t" in prefix:
+                    new_prefix = prefix.replace("\t", "    ")
+                    line = new_prefix + line[len(prefix):]
+            fixed.append(line)
+        return "\n".join(fixed)
     
     def analyze_complexity(self, code: str) -> Dict[str, str]:
         """Analyze time and space complexity of code (basic analysis)."""
-        # Simple heuristic-based complexity analysis
         time_complexity = "O(1)"
         space_complexity = "O(1)"
-        
+
         try:
-            tree = ast.parse(code)
-            
-            has_nested_loops = False
-            has_single_loop = False
-            has_recursion = False
+            src = self.sanitize_code(code)
+            tree = ast.parse(src)
+
+            func_names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+
+            max_loop_depth = 0
             has_sorting = False
+            has_recursion = False
             creates_new_data_structures = False
-            
-            for node in ast.walk(tree):
-                if isinstance(node, ast.For):
-                    # Check for nested loops
-                    for child in ast.walk(node):
-                        if isinstance(child, ast.For) and child != node:
-                            has_nested_loops = True
-                        else:
-                            has_single_loop = True
-                
-                elif isinstance(node, ast.While):
-                    has_single_loop = True
-                
-                elif isinstance(node, ast.FunctionDef):
-                    # Check for recursive calls
-                    for child in ast.walk(node):
-                        if (isinstance(child, ast.Call) and 
-                            isinstance(child.func, ast.Name) and 
-                            child.func.id == node.name):
-                            has_recursion = True
-                
-                elif isinstance(node, ast.Call):
-                    if (isinstance(node.func, ast.Attribute) and 
-                        node.func.attr in ["sort", "sorted"]):
+
+            def visit(node, depth):
+                nonlocal max_loop_depth, has_sorting, has_recursion, creates_new_data_structures
+                if isinstance(node, (ast.For, ast.While)):
+                    depth += 1
+                    max_loop_depth = max(max_loop_depth, depth)
+
+                if isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Attribute) and node.func.attr in {"sort", "sorted"}:
                         has_sorting = True
-                    elif (isinstance(node.func, ast.Name) and 
-                          node.func.id in ["sorted"]):
+                    if isinstance(node.func, ast.Name) and node.func.id in {"sorted"}:
                         has_sorting = True
-                
-                elif isinstance(node, (ast.List, ast.Dict, ast.Set)):
-                    if len(node.elts if hasattr(node, 'elts') else 
-                           (node.keys if hasattr(node, 'keys') else [])) > 0:
-                        creates_new_data_structures = True
-            
-            # Determine time complexity
-            if has_nested_loops:
+                    if isinstance(node.func, ast.Name) and node.func.id in func_names:
+                        has_recursion = True
+
+                if isinstance(node, (ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)):
+                    creates_new_data_structures = True
+
+                for child in ast.iter_child_nodes(node):
+                    visit(child, depth)
+
+            visit(tree, 0)
+
+            if max_loop_depth >= 2:
                 time_complexity = "O(n²)"
-            elif has_single_loop:
+            elif max_loop_depth == 1:
                 time_complexity = "O(n)"
-            elif has_recursion:
-                time_complexity = "O(n)" # Simplified assumption
             elif has_sorting:
                 time_complexity = "O(n log n)"
-            
-            # Determine space complexity
+            elif has_recursion:
+                time_complexity = "O(n)"
+
             if creates_new_data_structures or has_recursion:
                 space_complexity = "O(n)"
-                
+
         except Exception:
-            pass  # Fall back to default values
-        
-        return {
-            "time_complexity": time_complexity,
-            "space_complexity": space_complexity
-        }
+            pass
+
+        return {"time_complexity": time_complexity, "space_complexity": space_complexity}
     
     def run_with_timeout(self, code: str, timeout: int = None) -> Dict[str, Any]:
         """Run code with timeout protection."""

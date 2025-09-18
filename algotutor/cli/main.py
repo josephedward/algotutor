@@ -9,7 +9,12 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.markdown import Markdown
 from typing import Optional, Dict, Any
+import os
+import shlex
+import shutil
+import ast
 import time
+import tempfile
 
 from algotutor.services.database import db_service
 from algotutor.services.llm import llm_service
@@ -40,12 +45,18 @@ class TutorSession:
         while True:
             choice = Prompt.ask(
                 "\nWhat would you like to do?",
-                choices=["solve", "review", "progress", "quit"],
+                choices=["solve", "pick", "review", "progress", "quit"],
                 default="solve"
             )
             
             if choice == "solve":
+                # Default quick-start problem (Arrays and Strings → first)
                 self.solve_problem()
+            elif choice == "pick":
+                problem = self.pick_problem()
+                if problem:
+                    self.current_problem = problem
+                    self.solve_problem()
             elif choice == "review":
                 self.review_progress()
             elif choice == "progress":
@@ -56,13 +67,13 @@ class TutorSession:
     
     def solve_problem(self):
         """Interactive problem solving with LLM guidance."""
-        # Get a problem (simplified - just get first available problem)
-        problems = db_service.get_problems_by_category("Arrays and Strings")
-        if not problems:
-            console.print("[red]No problems available. Please initialize the curriculum first.[/red]")
-            return
-            
-        self.current_problem = problems[0]  # For demo, use first problem
+        # If no problem pre-selected, pick default: first in Arrays and Strings
+        if not self.current_problem:
+            problems = db_service.get_problems_by_category("Arrays and Strings")
+            if not problems:
+                console.print("[red]No problems available. Please initialize the curriculum first.[/red]")
+                return
+            self.current_problem = problems[0]
         self.hint_level = 0
         
         # Display problem
@@ -72,12 +83,16 @@ class TutorSession:
         while True:
             action = Prompt.ask(
                 "\nWhat would you like to do?",
-                choices=["code", "hint", "submit", "skip", "back"],
+                choices=["code", "format", "lint", "hint", "submit", "skip", "back"],
                 default="code"
             )
             
             if action == "code":
                 self.code_editor()
+            elif action == "format":
+                self.format_code()
+            elif action == "lint":
+                self.lint_code()
             elif action == "hint":
                 self.get_hint()
             elif action == "submit":
@@ -120,7 +135,7 @@ class TutorSession:
             return
 
         console.print("\n[bold]Code Editor[/bold]")
-        console.print("[dim]Opening your $EDITOR (falls back to vi). Save & quit to return.[/dim]")
+        console.print("[dim]Opening your editor. Save & quit to return.[/dim]")
 
         # Determine initial content
         initial = None
@@ -131,11 +146,17 @@ class TutorSession:
         else:
             initial = "# Write your solution here\n"
 
+        # Choose editor: Settings.editor_command > $VISUAL/$EDITOR > common fallbacks
         edited = None
-        try:
-            edited = click.edit(initial, extension=".py")
-        except Exception as e:
-            console.print(f"[red]Failed to open external editor: {e}[/red]")
+        editor_cmd = self._select_editor()
+        if editor_cmd:
+            try:
+                # require_save=False returns content even if unchanged
+                edited = click.edit(initial, extension=".py", editor=editor_cmd, require_save=False)
+            except Exception as e:
+                console.print(f"[red]Failed to open external editor '{editor_cmd}': {e}[/red]")
+        else:
+            console.print("[yellow]No suitable editor found in PATH. Falling back to inline entry.[/yellow]")
 
         # If editor was aborted or failed, fall back to simple inline input
         if edited is None:
@@ -161,6 +182,23 @@ class TutorSession:
             console.print("[red]No code captured.[/red]")
             return
 
+        # Optional: pre-parse to catch obvious syntax issues early
+        try:
+            # Sanitize first to avoid tab/space mix false positives
+            code_for_check = code_execution_service.sanitize_code(code)
+            ast.parse(code_for_check)
+        except SyntaxError as e:
+            console.print(Panel(
+                f"[red]Syntax error on line {getattr(e, 'lineno', '?')}: {e.msg}[/red]",
+                title="❌ Syntax Error",
+                border_style="red",
+            ))
+            # Show a snippet for context
+            syntax = Syntax(code_for_check, "python", theme="monokai", line_numbers=True)
+            console.print(syntax)
+            if Confirm.ask("Open editor to fix it?", default=True):
+                return self.code_editor()
+
         # Create or update attempt
         if self.current_attempt is None:
             self.current_attempt = db_service.create_attempt(
@@ -178,6 +216,65 @@ class TutorSession:
 
         # Get Socratic question from LLM
         self.provide_socratic_feedback(code)
+
+    def pick_problem(self) -> Optional[Problem]:
+        """Let the user choose a category and problem to solve."""
+        categories = db_service.list_problem_categories()
+        if not categories:
+            console.print("[red]No problems available. Please initialize the curriculum first.[/red]")
+            return None
+        category = Prompt.ask("Choose a category", choices=categories, default=categories[0])
+        problems = db_service.get_problems_by_category(category)
+        if not problems:
+            console.print("[red]No problems in that category.[/red]")
+            return None
+        titles = [p.title for p in problems]
+        selected_title = Prompt.ask("Choose a problem", choices=titles, default=titles[0])
+        for p in problems:
+            if p.title == selected_title:
+                return p
+        return problems[0]
+
+    def _select_editor(self) -> Optional[str]:
+        """Pick an editor command to use with click.edit.
+
+        Priority: settings.editor_command -> $VISUAL -> $EDITOR -> fallback list.
+        Ensures VS Code waits for window close by adding -w if missing.
+        Returns a shell command string or None if none found.
+        """
+        # Prefer explicit setting
+        from algotutor.core.config import settings
+
+        candidates: list[str] = []
+        if settings.editor_command:
+            candidates.append(settings.editor_command)
+
+        env_visual = os.environ.get("VISUAL")
+        env_editor = os.environ.get("EDITOR")
+        if env_visual:
+            candidates.append(env_visual)
+        if env_editor:
+            candidates.append(env_editor)
+
+        # Common fallbacks by preference
+        candidates.extend([
+            "code -w",  # VS Code
+            "cursor -w",  # Cursor editor
+            "nvim",
+            "vim",
+            "nano",
+            "vi",
+        ])
+
+        for cmd in candidates:
+            # Extract executable for which()
+            exe = shlex.split(cmd)[0] if cmd else ""
+            if exe and shutil.which(exe):
+                # Ensure VS Code waits
+                if exe in {"code", "cursor"} and "-w" not in cmd:
+                    cmd = f"{cmd} -w"
+                return cmd
+        return None
     
     def provide_socratic_feedback(self, code: str):
         """Provide Socratic questioning feedback."""
@@ -197,6 +294,85 @@ class TutorSession:
         response = Prompt.ask("\nYour thoughts")
         if response:
             console.print(f"[dim]Interesting perspective: {response}[/dim]")
+
+    def format_code(self):
+        """Format the current code with Black if available."""
+        if not self.current_attempt or not (self.current_attempt.code or "").strip():
+            console.print("[yellow]No code to format. Use 'code' first.[/yellow]")
+            return
+        code = self.current_attempt.code
+        try:
+            import black
+
+            mode = black.Mode()  # respects pyproject defaults
+            formatted = black.format_str(code, mode=mode)
+            if formatted != code:
+                db_service.update_attempt(self.current_attempt.id, code=formatted)
+                self.current_attempt.code = formatted
+                console.print("[green]Code formatted with Black.[/green]")
+            else:
+                console.print("[green]Code already well-formatted.[/green]")
+            syntax = Syntax(self.current_attempt.code, "python", theme="monokai", line_numbers=True)
+            console.print(syntax)
+        except Exception as e:
+            console.print(Panel(
+                f"Black not available or failed: {e}\nInstall dev extras: pip install -e .[dev]",
+                title="⚠️ Formatter",
+                border_style="yellow",
+            ))
+
+    def lint_code(self):
+        """Lint the current code. Uses flake8 if available, else basic checks."""
+        if not self.current_attempt or not (self.current_attempt.code or "").strip():
+            console.print("[yellow]No code to lint. Use 'code' first.[/yellow]")
+            return
+        code = self.current_attempt.code
+
+        # Try flake8 API first
+        try:
+            from flake8.api import legacy as flake8
+
+            style_guide = flake8.get_style_guide(max_line_length=88)
+            with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as tf:
+                tf.write(code)
+                tmp_path = tf.name
+            report = style_guide.check_files([tmp_path])
+            os.unlink(tmp_path)
+            if report.total_errors == 0:
+                console.print(Panel("No lint issues found.", title="🧹 Lint", border_style="green"))
+            else:
+                console.print(Panel(f"Found {report.total_errors} issue(s). (See above)", title="🧹 Lint", border_style="yellow"))
+                syntax = Syntax(code, "python", theme="monokai", line_numbers=True)
+                console.print(syntax)
+            return
+        except Exception:
+            pass
+
+        # Basic fallback checks
+        issues = []
+        lines = code.splitlines()
+        for i, ln in enumerate(lines, 1):
+            if "\t" in ln[:len(ln) - len(ln.lstrip())]:
+                issues.append((i, "TABS", "Indentation uses tabs; prefer 4 spaces."))
+            if len(ln) > 100:
+                issues.append((i, "LINE", f"Line too long ({len(ln)} > 100)."))
+            if ln.rstrip() != ln:
+                issues.append((i, "WS", "Trailing whitespace."))
+        try:
+            ast.parse(code)
+        except SyntaxError as e:
+            issues.append((getattr(e, "lineno", 0) or 0, "SYNTAX", e.msg))
+
+        if not issues:
+            console.print(Panel("No lint issues found (basic checks).", title="🧹 Lint", border_style="green"))
+        else:
+            table = Table(title="Lint Issues (basic)")
+            table.add_column("Line", style="cyan", justify="right")
+            table.add_column("Code", style="magenta")
+            table.add_column("Message", style="yellow")
+            for line, code_, msg in issues[:50]:
+                table.add_row(str(line), code_, msg)
+            console.print(table)
     
     def get_hint(self):
         """Get a progressive hint."""
@@ -302,24 +478,43 @@ class TutorSession:
                 code=code,
                 problem=self.current_problem.description
             )
+
+        # Always compute heuristic complexity as a fallback
+        heuristics = code_execution_service.analyze_complexity(code_execution_service.sanitize_code(code))
         
         # Display overall feedback
+        overall = feedback.get("overall_feedback", "No feedback available")
         console.print(Panel(
-            feedback.get("overall_feedback", "No feedback available"),
+            overall,
             title="📝 Overall Feedback",
             border_style="blue"
         ))
         
         # Display complexity analysis
+        def _pref(val: Optional[str], h: str) -> str:
+            if val and str(val).strip().lower() not in {"unknown", "n/a"}:
+                return str(val)
+            return h or "Unknown"
+
+        time_c = _pref(feedback.get('time_complexity'), heuristics.get('time_complexity', 'Unknown'))
+        space_c = _pref(feedback.get('space_complexity'), heuristics.get('space_complexity', 'Unknown'))
         complexity_info = f"""
-        **Time Complexity:** {feedback.get('time_complexity', 'Unknown')}
-        **Space Complexity:** {feedback.get('space_complexity', 'Unknown')}
+        **Time Complexity:** {time_c}
+        **Space Complexity:** {space_c}
         """
         console.print(Panel(
             Markdown(complexity_info),
             title="⚡ Complexity Analysis",
             border_style="cyan"
         ))
+
+        # If no LLM available, provide a helpful hint to enable it
+        if "Unable to analyze" in overall or "LLM not configured" in overall:
+            from algotutor.core.config import settings
+            tip = "Set OPENAI_API_KEY in your .env to enable AI analysis."
+            if settings.openai_api_key:
+                tip = f"LLM error occurred. Verify network access and model name (current: {settings.model_name})."
+            console.print(Panel(tip, title="ℹ️ Tip", border_style="magenta"))
         
         # Display patterns identified
         patterns = feedback.get("patterns_used", [])
