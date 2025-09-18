@@ -2,14 +2,14 @@
 
 import os
 from typing import Optional
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings."""
     
     # OpenAI Configuration
-    openai_api_key: str
+    openai_api_key: Optional[str] = ""
     model_name: str = "gpt-4-turbo-preview"
     max_tokens: int = 2000
     temperature: float = 0.7
@@ -21,9 +21,11 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Pydantic v2 settings config
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
 
 
 def get_settings() -> Settings:
