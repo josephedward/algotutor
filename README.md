@@ -1,2 +1,2 @@
-# cb
-python algorithm tutor
+# Algo-Tutor
+algorithm tutor
