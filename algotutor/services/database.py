@@ -104,6 +104,20 @@ class DatabaseService:
         with self.get_session() as session:
             rows = session.query(Problem.category).distinct().all()
             return [r[0] for r in rows if r and r[0]]
+
+    def get_all_problems(self) -> List[Problem]:
+        """Get all problems, ordered by category and title."""
+        with self.get_session() as session:
+            return session.query(Problem).order_by(Problem.category, Problem.title).all()
+
+    def get_solved_problem_ids(self, user_id: int) -> List[int]:
+        """Get IDs of all problems solved by a user."""
+        with self.get_session() as session:
+            solved_attempts = session.query(Attempt.problem_id).filter(
+                Attempt.user_id == user_id,
+                Attempt.status == "solved"
+            ).distinct().all()
+            return [problem_id for problem_id, in solved_attempts]
     
     # Attempt operations
     def create_attempt(self, user_id: int, problem_id: int, code: str,
