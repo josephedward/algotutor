@@ -35,7 +35,7 @@ def test_e2e_init_and_quit(monkeypatch, tmp_path):
     assert session_result.exit_code == 0, session_result.output
 
     # Sanity checks on output content
-    assert "Welcome to CB Algorithm Tutor" in session_result.output
+    assert "Welcome to AlgoTutor" in session_result.output
     assert "Problem:" in session_result.output
     assert "Hint" in session_result.output
     assert "Happy learning!" in session_result.output
