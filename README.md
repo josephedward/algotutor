@@ -1,4 +1,4 @@
-# CB Algorithm Tutor 🎯
+# AlgoTutor 🎯
 
 An AI-powered algorithm tutor that provides personalized learning with accountability, persistence, and real-time feedback. Think LeetCode + OpenAI Study Mode but with Socratic questioning, line-by-line feedback, and structured pattern recognition.
 
@@ -194,4 +194,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Happy Learning!** 🚀 The best way to master algorithms is through guided practice with immediate feedback. CB Algorithm Tutor provides the AI mentorship you need to level up your coding skills.
+**Happy Learning!** 🚀 The best way to master algorithms is through guided practice with immediate feedback. AlgoTutor provides the AI mentorship you need to level up your coding skills.
