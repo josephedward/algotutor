@@ -113,22 +113,17 @@ class CodeExecutionService:
         return results
 
     def sanitize_code(self, code: str) -> str:
-        """Best-effort sanitation of user code prior to parsing/execution.
+        """Normalize user code prior to parsing/execution.
 
-        - Convert leading tabs to 4 spaces to avoid mixed-indentation SyntaxError
-        - Normalize newlines
+        - Normalize newlines to \n
+        - Expand tabs to spaces using a width of 8 columns (Python's
+          indentation semantics treat tabs as advancing to the next
+          multiple of 8 columns). This preserves intended block depth
+          when users indent with tabs inside already-indented blocks.
         """
-        lines = code.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        fixed: list[str] = []
-        for line in lines:
-            m = re.match(r"^([ \t]*)", line)
-            if m:
-                prefix = m.group(1)
-                if "\t" in prefix:
-                    new_prefix = prefix.replace("\t", "    ")
-                    line = new_prefix + line[len(prefix):]
-            fixed.append(line)
-        return "\n".join(fixed)
+        normalized = code.replace("\r\n", "\n").replace("\r", "\n")
+        # Use Python-compatible tab expansion to avoid reducing indent depth
+        return normalized.expandtabs(8)
     
     def analyze_complexity(self, code: str) -> Dict[str, str]:
         """Analyze time and space complexity of code (basic analysis)."""
