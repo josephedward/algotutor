@@ -1,4 +1,4 @@
-"""Main entry point for CB Algorithm Tutor."""
+"""Main entry point for AlgoTutor."""
 
 from algotutor.cli.main import main
 
