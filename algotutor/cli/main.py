@@ -1,4 +1,4 @@
-"""CLI interface for CB Algorithm Tutor."""
+"""CLI interface for AlgoTutor."""
 
 import click
 from rich.console import Console
@@ -13,7 +13,6 @@ import os
 import shlex
 import shutil
 import ast
-import time
 import tempfile
 
 from algotutor.services.database import db_service
@@ -21,34 +20,37 @@ from algotutor.services.llm import llm_service
 from algotutor.services.execution import code_execution_service
 from algotutor.services.curriculum import curriculum_service
 from algotutor.models import User, Problem, Attempt
+from algotutor.cli.interactive import select as interactive_select
 
 console = Console()
 
 
 class TutorSession:
     """Interactive tutoring session manager."""
-    
+
     def __init__(self, user: User):
         self.user = user
         self.current_problem: Optional[Problem] = None
         self.current_attempt: Optional[Attempt] = None
         self.hint_level = 0
-        
+
     def start_session(self):
         """Start an interactive learning session."""
-        console.print(Panel.fit(
-            f"[bold green]Welcome to CB Algorithm Tutor, {self.user.username}![/bold green]\n"
-            "Let's begin your personalized learning session.",
-            title="🎯 Learning Session"
-        ))
-        
+        console.print(
+            Panel.fit(
+                f"[bold green]Welcome to AlgoTutor, {self.user.username}![/bold green]\n"
+                "Let's begin your personalized learning session.",
+                title="🎯 Learning Session",
+            )
+        )
+
         while True:
             choice = Prompt.ask(
                 "\nWhat would you like to do?",
                 choices=["solve", "pick", "review", "progress", "quit"],
-                default="solve"
+                default="solve",
             )
-            
+
             if choice == "solve":
                 # Default quick-start problem (Arrays and Strings → first)
                 self.solve_problem()
@@ -64,29 +66,47 @@ class TutorSession:
             elif choice == "quit":
                 console.print("[yellow]Happy learning! See you next time! 👋[/yellow]")
                 break
-    
+
     def solve_problem(self):
         """Interactive problem solving with LLM guidance."""
-        # If no problem pre-selected, pick default: first in Arrays and Strings
+        # If no problem pre-selected, find the next unsolved problem
         if not self.current_problem:
-            problems = db_service.get_problems_by_category("Arrays and Strings")
-            if not problems:
-                console.print("[red]No problems available. Please initialize the curriculum first.[/red]")
+            all_problems = db_service.get_all_problems()
+            if not all_problems:
+                console.print(
+                    "[red]No problems available. Please initialize the curriculum first.[/red]"
+                )
                 return
-            self.current_problem = problems[0]
+
+            solved_problem_ids = db_service.get_solved_problem_ids(self.user.id)
+
+            next_unsolved_problem = None
+            for problem in all_problems:
+                if problem.id not in solved_problem_ids:
+                    next_unsolved_problem = problem
+                    break
+
+            if not next_unsolved_problem:
+                console.print(
+                    "[bold green]🎉 You have solved all available problems! Great job![/bold green]"
+                )
+                self.current_problem = None  # Ensure no problem is carried over
+                return
+
+            self.current_problem = next_unsolved_problem
         self.hint_level = 0
-        
+
         # Display problem
         self.display_problem()
-        
+
         # Interactive coding loop
         while True:
             action = Prompt.ask(
                 "\nWhat would you like to do?",
                 choices=["code", "format", "lint", "hint", "submit", "skip", "back"],
-                default="code"
+                default="code",
             )
-            
+
             if action == "code":
                 self.code_editor()
             elif action == "format":
@@ -103,32 +123,42 @@ class TutorSession:
                 break
             elif action == "back":
                 break
-    
+
     def display_problem(self):
         """Display the current problem details."""
         if not self.current_problem:
             return
-            
+
         problem = self.current_problem
-        
+
         # Problem header
         console.print(f"\n[bold blue]Problem: {problem.title}[/bold blue]")
-        console.print(f"[dim]Difficulty: {problem.difficulty.title()} | Category: {problem.category}[/dim]")
+        console.print(
+            f"[dim]Difficulty: {problem.difficulty.title()} | Category: {problem.category}[/dim]"
+        )
         console.print(f"[dim]Patterns: {', '.join(problem.patterns)}[/dim]\n")
-        
+
         # Problem description
-        console.print(Panel(
-            Markdown(problem.description),
-            title="📋 Problem Description",
-            border_style="blue"
-        ))
-        
+        console.print(
+            Panel(
+                Markdown(problem.description),
+                title="📋 Problem Description",
+                border_style="blue",
+            )
+        )
+
         # Template code
         if problem.solution_template:
             console.print("\n[bold]Starting Template:[/bold]")
-            syntax = Syntax(problem.solution_template, "python", theme="monokai", line_numbers=True)
+            syntax = Syntax(
+                problem.solution_template,
+                "python",
+                theme="monokai",
+                line_numbers=True,
+                tab_size=4,
+            )
             console.print(syntax)
-    
+
     def code_editor(self):
         """Open system editor for code entry, with fallback."""
         if not self.current_problem:
@@ -138,7 +168,6 @@ class TutorSession:
         console.print("[dim]Opening your editor. Save & quit to return.[/dim]")
 
         # Determine initial content
-        initial = None
         if self.current_attempt and self.current_attempt.code:
             initial = self.current_attempt.code
         elif self.current_problem.solution_template:
@@ -152,15 +181,23 @@ class TutorSession:
         if editor_cmd:
             try:
                 # require_save=False returns content even if unchanged
-                edited = click.edit(initial, extension=".py", editor=editor_cmd, require_save=False)
+                edited = click.edit(
+                    initial, extension=".py", editor=editor_cmd, require_save=False
+                )
             except Exception as e:
-                console.print(f"[red]Failed to open external editor '{editor_cmd}': {e}[/red]")
+                console.print(
+                    f"[red]Failed to open external editor '{editor_cmd}': {e}[/red]"
+                )
         else:
-            console.print("[yellow]No suitable editor found in PATH. Falling back to inline entry.[/yellow]")
+            console.print(
+                "[yellow]No suitable editor found in PATH. Falling back to inline entry.[/yellow]"
+            )
 
         # If editor was aborted or failed, fall back to simple inline input
         if edited is None:
-            console.print("[yellow]Editor aborted. Falling back to inline entry. Press Enter twice to finish.[/yellow]")
+            console.print(
+                "[yellow]Editor aborted. Falling back to inline entry. Press Enter twice to finish.[/yellow]"
+            )
             code_lines = []
             empty_lines = 0
             while empty_lines < 2:
@@ -188,16 +225,37 @@ class TutorSession:
             code_for_check = code_execution_service.sanitize_code(code)
             ast.parse(code_for_check)
         except SyntaxError as e:
-            console.print(Panel(
-                f"[red]Syntax error on line {getattr(e, 'lineno', '?')}: {e.msg}[/red]",
-                title="❌ Syntax Error",
-                border_style="red",
-            ))
+            console.print(
+                Panel(
+                    f"[red]Syntax error on line {getattr(e, 'lineno', '?')}: {e.msg}[/red]",
+                    title="❌ Syntax Error",
+                    border_style="red",
+                )
+            )
             # Show a snippet for context
-            syntax = Syntax(code_for_check, "python", theme="monokai", line_numbers=True)
+            syntax = Syntax(
+                code_for_check,
+                "python",
+                theme="monokai",
+                line_numbers=True,
+                tab_size=4,
+            )
             console.print(syntax)
+            # Save the problematic code to the current attempt so it's preserved if the user re-opens the editor
+            if self.current_attempt is None:
+                self.current_attempt = db_service.create_attempt(
+                    user_id=self.user.id,
+                    problem_id=self.current_problem.id,
+                    code=code,
+                )
+            else:
+                db_service.update_attempt(self.current_attempt.id, code=code)
+
             if Confirm.ask("Open editor to fix it?", default=True):
                 return self.code_editor()
+            else:
+                # User declined to fix the syntax error. Do not proceed with this code.
+                return
 
         # Create or update attempt
         if self.current_attempt is None:
@@ -211,7 +269,7 @@ class TutorSession:
 
         # Show code with syntax highlighting
         console.print("\n[bold]Your Code:[/bold]")
-        syntax = Syntax(code, "python", theme="monokai", line_numbers=True)
+        syntax = Syntax(code, "python", theme="monokai", line_numbers=True, tab_size=4)
         console.print(syntax)
 
         # Get Socratic question from LLM
@@ -221,15 +279,17 @@ class TutorSession:
         """Let the user choose a category and problem to solve."""
         categories = db_service.list_problem_categories()
         if not categories:
-            console.print("[red]No problems available. Please initialize the curriculum first.[/red]")
+            console.print(
+                "[red]No problems available. Please initialize the curriculum first.[/red]"
+            )
             return None
-        category = Prompt.ask("Choose a category", choices=categories, default=categories[0])
+        category = interactive_select("Choose a category", categories, default=categories[0])
         problems = db_service.get_problems_by_category(category)
         if not problems:
             console.print("[red]No problems in that category.[/red]")
             return None
         titles = [p.title for p in problems]
-        selected_title = Prompt.ask("Choose a problem", choices=titles, default=titles[0])
+        selected_title = interactive_select("Choose a problem", titles, default=titles[0])
         for p in problems:
             if p.title == selected_title:
                 return p
@@ -275,22 +335,24 @@ class TutorSession:
                     cmd = f"{cmd} -w"
                 return cmd
         return None
-    
+
     def provide_socratic_feedback(self, code: str):
         """Provide Socratic questioning feedback."""
-        with console.status("[dim]Analyzing your code...[/dim]") as status:
+        with console.status("[dim]Analyzing your code...[/dim]"):
             question = llm_service.generate_socratic_question(
                 code=code,
                 problem=self.current_problem.description,
-                context="Student is working on their solution"
+                context="Student is working on their solution",
             )
-        
-        console.print(Panel(
-            f"[italic]{question}[/italic]",
-            title="🤔 Think About This",
-            border_style="green"
-        ))
-        
+
+        console.print(
+            Panel(
+                f"[italic]{question}[/italic]",
+                title="🤔 Think About This",
+                border_style="green",
+            )
+        )
+
         response = Prompt.ask("\nYour thoughts")
         if response:
             console.print(f"[dim]Interesting perspective: {response}[/dim]")
@@ -312,14 +374,22 @@ class TutorSession:
                 console.print("[green]Code formatted with Black.[/green]")
             else:
                 console.print("[green]Code already well-formatted.[/green]")
-            syntax = Syntax(self.current_attempt.code, "python", theme="monokai", line_numbers=True)
+            syntax = Syntax(
+                self.current_attempt.code,
+                "python",
+                theme="monokai",
+                line_numbers=True,
+                tab_size=4,
+            )
             console.print(syntax)
         except Exception as e:
-            console.print(Panel(
-                f"Black not available or failed: {e}\nInstall dev extras: pip install -e .[dev]",
-                title="⚠️ Formatter",
-                border_style="yellow",
-            ))
+            console.print(
+                Panel(
+                    f"Black not available or failed: {e}\nInstall dev extras: pip install -e .[dev]",
+                    title="⚠️ Formatter",
+                    border_style="yellow",
+                )
+            )
 
     def lint_code(self):
         """Lint the current code. Uses flake8 if available, else basic checks."""
@@ -341,8 +411,14 @@ class TutorSession:
             if report.total_errors == 0:
                 console.print(Panel("No lint issues found.", title="🧹 Lint", border_style="green"))
             else:
-                console.print(Panel(f"Found {report.total_errors} issue(s). (See above)", title="🧹 Lint", border_style="yellow"))
-                syntax = Syntax(code, "python", theme="monokai", line_numbers=True)
+                console.print(
+                    Panel(
+                        f"Found {report.total_errors} issue(s). (See above)",
+                        title="🧹 Lint",
+                        border_style="yellow",
+                    )
+                )
+                syntax = Syntax(code, "python", theme="monokai", line_numbers=True, tab_size=4)
                 console.print(syntax)
             return
         except Exception:
@@ -352,7 +428,7 @@ class TutorSession:
         issues = []
         lines = code.splitlines()
         for i, ln in enumerate(lines, 1):
-            if "\t" in ln[:len(ln) - len(ln.lstrip())]:
+            if "\t" in ln[: len(ln) - len(ln.lstrip())]:
                 issues.append((i, "TABS", "Indentation uses tabs; prefer 4 spaces."))
             if len(ln) > 100:
                 issues.append((i, "LINE", f"Line too long ({len(ln)} > 100)."))
@@ -364,7 +440,11 @@ class TutorSession:
             issues.append((getattr(e, "lineno", 0) or 0, "SYNTAX", e.msg))
 
         if not issues:
-            console.print(Panel("No lint issues found (basic checks).", title="🧹 Lint", border_style="green"))
+            console.print(
+                Panel(
+                    "No lint issues found (basic checks).", title="🧹 Lint", border_style="green"
+                )
+            )
         else:
             table = Table(title="Lint Issues (basic)")
             table.add_column("Line", style="cyan", justify="right")
@@ -373,14 +453,14 @@ class TutorSession:
             for line, code_, msg in issues[:50]:
                 table.add_row(str(line), code_, msg)
             console.print(table)
-    
+
     def get_hint(self):
         """Get a progressive hint."""
         if not self.current_problem:
             return
-            
+
         self.hint_level = min(self.hint_level + 1, 3)
-        
+
         if self.hint_level <= len(self.current_problem.hints):
             hint = self.current_problem.hints[self.hint_level - 1]
         else:
@@ -390,66 +470,72 @@ class TutorSession:
                 hint = llm_service.generate_hint(
                     problem=self.current_problem.description,
                     current_code=code,
-                    hint_level=self.hint_level
+                    hint_level=self.hint_level,
                 )
-        
-        console.print(Panel(
-            f"[yellow]Hint {self.hint_level}: {hint}[/yellow]",
-            title="💡 Hint",
-            border_style="yellow"
-        ))
-    
+
+        console.print(
+            Panel(
+                f"[yellow]Hint {self.hint_level}: {hint}[/yellow]",
+                title="💡 Hint",
+                border_style="yellow",
+            )
+        )
+
     def submit_solution(self) -> bool:
         """Submit and test the solution."""
         if not self.current_attempt:
             console.print("[red]No code to submit. Write some code first![/red]")
             return False
-        
+
         code = self.current_attempt.code
         test_cases = self.current_problem.test_cases
-        
+
         console.print("\n[bold]Testing your solution...[/bold]")
-        
+
         # Execute code with test cases
         with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}")) as progress:
-            task = progress.add_task("Running tests...", total=None)
+            _task = progress.add_task("Running tests...", total=None)
             results = code_execution_service.execute_python_code(code, test_cases)
-        
+
         # Display results
         self.display_test_results(results)
-        
+
         # Get detailed feedback from LLM
         if results["syntax_valid"]:
             self.provide_detailed_feedback(code, results)
-        
+
         # Update attempt record
         db_service.update_attempt(
             self.current_attempt.id,
             status="solved" if results["success"] else "attempted",
-            feedback=results
+            feedback=results,
         )
-        
+
         return results["success"]
-    
+
     def display_test_results(self, results: Dict[str, Any]):
         """Display test execution results."""
         if not results["syntax_valid"]:
-            console.print(Panel(
-                f"[red]Syntax Error:\n{results['errors']}[/red]",
-                title="❌ Syntax Error",
-                border_style="red"
-            ))
+            console.print(
+                Panel(
+                    f"[red]Syntax Error:\n{results['errors']}[/red]",
+                    title="❌ Syntax Error",
+                    border_style="red",
+                )
+            )
             return
-        
+
         if results["success"]:
-            console.print(Panel(
-                "[green]🎉 All tests passed! Great job![/green]",
-                title="✅ Success",
-                border_style="green"
-            ))
+            console.print(
+                Panel(
+                    "[green]🎉 All tests passed! Great job![/green]",
+                    title="✅ Success",
+                    border_style="green",
+                )
+            )
         else:
             console.print(f"[yellow]Test Results: {results['output']}[/yellow]")
-        
+
         # Show individual test results
         if results["test_results"]:
             table = Table(title="Test Case Results")
@@ -458,7 +544,7 @@ class TutorSession:
             table.add_column("Expected", style="green")
             table.add_column("Actual", style="yellow")
             table.add_column("Result", justify="center")
-            
+
             for test in results["test_results"]:
                 status = "✅" if test["passed"] else "❌"
                 table.add_row(
@@ -466,95 +552,98 @@ class TutorSession:
                     str(test["input"]),
                     str(test["expected"]),
                     str(test.get("actual", "Error")),
-                    status
+                    status,
                 )
-            
+
             console.print(table)
-    
+
     def provide_detailed_feedback(self, code: str, results: Dict[str, Any]):
         """Provide detailed LLM feedback on the solution."""
         with console.status("[dim]Generating detailed feedback...[/dim]"):
             feedback = llm_service.provide_line_by_line_feedback(
-                code=code,
-                problem=self.current_problem.description
+                code=code, problem=self.current_problem.description
             )
 
         # Always compute heuristic complexity as a fallback
-        heuristics = code_execution_service.analyze_complexity(code_execution_service.sanitize_code(code))
-        
+        heuristics = code_execution_service.analyze_complexity(
+            code_execution_service.sanitize_code(code)
+        )
+
         # Display overall feedback
         overall = feedback.get("overall_feedback", "No feedback available")
-        console.print(Panel(
-            overall,
-            title="📝 Overall Feedback",
-            border_style="blue"
-        ))
-        
+        console.print(
+            Panel(overall, title="📝 Overall Feedback", border_style="blue")
+        )
+
         # Display complexity analysis
         def _pref(val: Optional[str], h: str) -> str:
             if val and str(val).strip().lower() not in {"unknown", "n/a"}:
                 return str(val)
             return h or "Unknown"
 
-        time_c = _pref(feedback.get('time_complexity'), heuristics.get('time_complexity', 'Unknown'))
-        space_c = _pref(feedback.get('space_complexity'), heuristics.get('space_complexity', 'Unknown'))
+        time_c = _pref(
+            feedback.get("time_complexity"), heuristics.get("time_complexity", "Unknown")
+        )
+        space_c = _pref(
+            feedback.get("space_complexity"),
+            heuristics.get("space_complexity", "Unknown"),
+        )
         complexity_info = f"""
         **Time Complexity:** {time_c}
         **Space Complexity:** {space_c}
         """
-        console.print(Panel(
-            Markdown(complexity_info),
-            title="⚡ Complexity Analysis",
-            border_style="cyan"
-        ))
+        console.print(
+            Panel(Markdown(complexity_info), title="⚡ Complexity Analysis", border_style="cyan")
+        )
 
         # If no LLM available, provide a helpful hint to enable it
         if "Unable to analyze" in overall or "LLM not configured" in overall:
             from algotutor.core.config import settings
+
             tip = "Set OPENAI_API_KEY in your .env to enable AI analysis."
             if settings.openai_api_key:
                 tip = f"LLM error occurred. Verify network access and model name (current: {settings.model_name})."
             console.print(Panel(tip, title="ℹ️ Tip", border_style="magenta"))
-        
+
         # Display patterns identified
         patterns = feedback.get("patterns_used", [])
         if patterns:
             console.print(f"[dim]Patterns identified: {', '.join(patterns)}[/dim]")
-    
+
     def review_progress(self):
         """Review user's progress and patterns."""
         console.print("[blue]Coming soon: Progress review feature![/blue]")
-    
+
     def show_progress(self):
         """Show detailed progress statistics."""
         console.print("[blue]Coming soon: Detailed progress statistics![/blue]")
 
 
 @click.command()
-@click.option('--user', '-u', help='Username for the session')
-@click.option('--init', is_flag=True, help='Initialize database with sample data')
+@click.option("--user", "-u", help="Username for the session")
+@click.option("--init", is_flag=True, help="Initialize database with sample data")
 def main(user: str, init: bool):
-    """CB Algorithm Tutor - Your AI-powered coding mentor."""
-    
+    """AlgoTutor - Your AI-powered coding mentor."""
+
     if init:
         console.print("[yellow]Initializing database and sample data...[/yellow]")
         db_service.create_tables()
         curriculum_service.initialize_default_data()
         console.print("[green]✅ Initialization complete![/green]")
         return
-    
+
     # Ensure database is set up
     db_service.create_tables()
-    
+
     # Get or create user
     if not user:
         user = Prompt.ask("Enter your username")
-    
+
     db_user = db_service.get_user_by_username(user)
     if not db_user:
         console.print(f"[green]Creating new user account for {user}[/green]")
         db_user = db_service.create_user(username=user)
-    
+
     # Start tutoring session
     session = TutorSession(db_user)
     session.start_session()
