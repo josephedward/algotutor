@@ -1,4 +1,4 @@
-# CB Algorithm Tutor - Quick Start Guide
+# AlgoTutor - Quick Start Guide
 
 ## Current Implementation Status
 
@@ -45,7 +45,7 @@ Enter your username when prompted, then:
 ## Sample Session Output
 
 ```
-🎯 Welcome to CB Algorithm Tutor, alice!
+🎯 Welcome to AlgoTutor, alice!
 ==================================================
 
 Options:
